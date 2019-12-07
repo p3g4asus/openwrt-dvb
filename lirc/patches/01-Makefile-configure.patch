@@ -1,0 +1,86 @@
+--- a/plugins/Makefile.am	2017-09-10 09:52:19.000000000 +0100
++++ b/plugins/Makefile.am	2019-11-26 10:18:39.000000000 +0100
+@@ -101,16 +101,14 @@
+ plugin_LTLIBRARIES          += uirt2.la
+ uirt2_la_SOURCES            = uirt2.c uirt2_common.c uirt2_common.h
+ 
+ plugin_LTLIBRARIES          += uirt2_raw.la
+ uirt2_raw_la_SOURCES        = uirt2_raw.c uirt2_common.c uirt2_common.h
+ 
+-if HAVE_DEVINPUT
+ plugin_LTLIBRARIES          += devinput.la
+ devinput_la_SOURCES         = devinput.c
+-endif
+ 
+ if HAVE_IOKIT
+ plugin_LTLIBRARIES          += osx_usbraw.la
+ osx_usbraw_la_SOURCES       = osx_usbraw.c
+ osx_usbraw_la_LDFLAGS       = $(AM_LDFLAGS) -framework IOKit -framework Cocoa
+ endif
+--- a/configure.ac	2017-09-10 09:52:19.000000000 +0100
++++ b/configure.ac	2019-11-26 09:53:02.000000000 +0100
+@@ -34,15 +34,15 @@
+   AC_MSG_ERROR([Required program pkg-config is missing or not in \$PATH])
+ fi
+ AC_CHECK_PROG([XSLTPROC],[xsltproc],[yes],[no])
+ if test x$XSLTPROC != "xyes"; then
+     AC_MSG_ERROR([xsltproc is required. It sometimes comes with libxml])
+ fi
+-AC_CHECK_PROG([MAN2HTML],[man2html],[yes],[no])
++AC_CHECK_PROG([MAN2HTML],[man2html],[ys],[no])
+ AM_CONDITIONAL(HAVE_MAN2HTML, test x$MAN2HTML = xyes)
+-AC_CHECK_PROG([DOXYGEN],[doxygen],[yes],[no])
++AC_CHECK_PROG([DOXYGEN],[doxygen],[ys],[no])
+ AM_CONDITIONAL(HAVE_DOXYGEN, test x$DOXYGEN = xyes)
+ LT_INIT([disable-static])
+ 
+ AM_PATH_PYTHON([3.1],,)
+ PKG_CHECK_MODULES([PYTHON],[python-${PYTHON_VERSION}m],,[true])
+ test -z "$PYTHON_LIBS" && \
+--- a/Makefile.am	2017-09-10 09:52:19.000000000 +0100
++++ b/Makefile.am	2019-11-26 09:57:43.000000000 +0100
+@@ -13,13 +13,13 @@
+ 
+ BASE_VERSION            = $(subst -rc,rc,$(subst -devel,,$(VERSION)))
+ 
+ VERBOSE                 = $(subst 0,,$(V))
+ AM_LIBTOOLFLAGS         = $(if $(VERBOSE),,--silent)
+ 
+-if HAVE_PYTHON35
++if FALSE
+ PYTHON_TARBALL          = python-pkg/dist/lirc-$(BASE_VERSION).tar.gz
+ endif
+ 
+ EXTRA_DIST              = README autogen.sh CONTRIBUTE.md ChangeLog \
+                           COPYING.curl COPYING.ciniparser
+ 
+@@ -79,13 +79,13 @@
+ py_PYTHON               = python-pkg/lirc/__init__.py \
+                           python-pkg/lirc/database.py \
+                           python-pkg/lirc/paths.py
+ 
+ nodist_py_pkg_PYTHON    = python-pkg/lirc/config.py
+ 
+-if HAVE_PYTHON35
++if FALSE
+ py_PYTHON               += python-pkg/lirc/async_client.py \
+                           python-pkg/lirc/client.py
+ 
+ py_pkg_testdir          = $(pkgdatadir)/python-pkg/tests
+ dist_py_pkg_test_DATA   = python-pkg/tests/test_client.py \
+                           python-pkg/tests/dummy-server \
+@@ -123,13 +123,13 @@
+ 	--msg-template='$(pylint_template)' $(py_PYTHON)
+ 
+ pep8: $(py_PYTHON)
+ 	$(MAKE) -C tools pep8
+ 	python3-pep8 --config=pep8.conf $?
+ 
+-if HAVE_PYTHON35
++if FALSE
+ all-local:
+ 	cd python-pkg; \
+ 	    CFLAGS="-I$(abs_top_srcdir)/lib -I$(abs_builddir)/lib" \
+ 	    LDFLAGS=-L$(abs_builddir)/lib/.libs $(PYTHON) setup.py \
+ 	    $(if $(VERBOSE),,-q) build
+ endif
