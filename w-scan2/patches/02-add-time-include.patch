@@ -1,0 +1,10 @@
+--- a/src/si_types.h
++++ b/src/si_types.h
+@@ -23,6 +23,7 @@
+ #define __SI_TYPES_H
+ 
+ #include <stdint.h>
++#include <time.h>
+ #include "descriptors.h"
+ #include "tools.h"
+ 

@@ -17,6 +17,7 @@ PKG_LICENSE := GPL-2.0
 PKG_LICENSE_FILE := COPYING
 
 PKG_MAINTAINER := Tomasz Maciej Nowak <tomek_n@o2.pl>
+PKG_HASH := skip
 
 include $(INCLUDE_DIR)/package.mk
 

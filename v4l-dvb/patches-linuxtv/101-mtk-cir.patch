@@ -1,0 +1,127 @@
+--- /dev/null
++++ b/backports/mtk-cir.patch
+@@ -0,0 +1,108 @@
++--- a/drivers/media/rc/mtk-cir.c	2019-10-27 17:50:27.000000000 +0100
+++++ b/drivers/media/rc/mtk-cir.c	2019-11-25 14:37:25.000000000 +0100
++@@ -1,20 +1,11 @@
+++// SPDX-License-Identifier: GPL-2.0-or-later
++ /*
++  * Driver for Mediatek IR Receiver Controller
++  *
++  * Copyright (C) 2017 Sean Wang <sean.wang@mediatek.com>
++- *
++- * This program is free software; you can redistribute it and/or
++- * modify it under the terms of the GNU General Public License as
++- * published by the Free Software Foundation; either version 2 of
++- * the License, or (at your option) any later version.
++- *
++- * This program is distributed in the hope that it will be useful,
++- * but WITHOUT ANY WARRANTY; without even the implied warranty of
++- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++- * GNU General Public License for more details.
++  */
++ 
++ #include <linux/clk.h>
++ #include <linux/interrupt.h>
++ #include <linux/module.h>
++ #include <linux/of_platform.h>
++@@ -41,12 +32,17 @@
++ /* Bit to restart IR receiving */
++ #define MTK_IRCLR		  BIT(0)
++ 
++ /* Fields containing pulse width data */
++ #define MTK_WIDTH_MASK		  (GENMASK(7, 0))
++ 
+++/* IR threshold */
+++#define MTK_IRTHD		 0x14
+++#define MTK_DG_CNT_MASK		 (GENMASK(12, 8))
+++#define MTK_DG_CNT(x)		 ((x) << 8)
+++
++ /* Bit to enable interrupt */
++ #define MTK_IRINT_EN		  BIT(0)
++ 
++ /* Bit to clear interrupt status */
++ #define MTK_IRINT_CLR		  BIT(0)
++ 
++@@ -326,16 +322,14 @@
++ 		 */
++ 		ir->bus = ir->clk;
++ 	}
++ 
++ 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++ 	ir->base = devm_ioremap_resource(dev, res);
++-	if (IS_ERR(ir->base)) {
++-		dev_err(dev, "failed to map registers\n");
+++	if (IS_ERR(ir->base))
++ 		return PTR_ERR(ir->base);
++-	}
++ 
++ 	ir->rc = devm_rc_allocate_device(dev, RC_DRIVER_IR_RAW);
++ 	if (!ir->rc) {
++ 		dev_err(dev, "failed to allocate device\n");
++ 		return -ENOMEM;
++ 	}
++@@ -348,29 +342,27 @@
++ 	ir->rc->input_id.product = 0x0001;
++ 	ir->rc->input_id.version = 0x0001;
++ 	map_name = of_get_property(dn, "linux,rc-map-name", NULL);
++ 	ir->rc->map_name = map_name ?: RC_MAP_EMPTY;
++ 	ir->rc->dev.parent = dev;
++ 	ir->rc->driver_name = MTK_IR_DEV;
++-	ir->rc->allowed_protocols = RC_PROTO_BIT_ALL;
+++	ir->rc->allowed_protocols = RC_PROTO_BIT_ALL_IR_DECODER;
++ 	ir->rc->rx_resolution = MTK_IR_SAMPLE;
++ 	ir->rc->timeout = MTK_MAX_SAMPLES * (MTK_IR_SAMPLE + 1);
++ 
++ 	ret = devm_rc_register_device(dev, ir->rc);
++ 	if (ret) {
++ 		dev_err(dev, "failed to register rc device\n");
++ 		return ret;
++ 	}
++ 
++ 	platform_set_drvdata(pdev, ir);
++ 
++ 	ir->irq = platform_get_irq(pdev, 0);
++-	if (ir->irq < 0) {
++-		dev_err(dev, "no irq resource\n");
+++	if (ir->irq < 0)
++ 		return -ENODEV;
++-	}
++ 
++ 	if (clk_prepare_enable(ir->clk)) {
++ 		dev_err(dev, "try to enable ir_clk failed\n");
++ 		return -EINVAL;
++ 	}
++ 
++@@ -405,12 +397,15 @@
++ 	 * indicating end of IR receiving completion
++ 	 */
++ 	val = (ir->data->hw_period << ir->data->fields[MTK_HW_PERIOD].offset) &
++ 	       ir->data->fields[MTK_HW_PERIOD].mask;
++ 	mtk_w32_mask(ir, val, ir->data->fields[MTK_HW_PERIOD].mask,
++ 		     ir->data->fields[MTK_HW_PERIOD].reg);
+++
+++	/* Set de-glitch counter */
+++	mtk_w32_mask(ir, MTK_DG_CNT(1), MTK_DG_CNT_MASK, MTK_IRTHD);
++ 
++ 	/* Enable IR and PWM */
++ 	val = mtk_r32(ir, MTK_CONFIG_HIGH_REG);
++ 	val |= MTK_OK_COUNT(ir->data->ok_count) |  MTK_PWM_EN | MTK_IR_EN;
++ 	mtk_w32(ir, val, MTK_CONFIG_HIGH_REG);
++ 
+--- a/backports/backports.txt
++++ b/backports/backports.txt
+@@ -23,12 +23,13 @@
+ [9.255.255]
+ add api_version.patch
+ add add_vtunerc_build.patch
+ add pr_fmt.patch
+ add debug.patch
+ add drx39xxj.patch
++add mtk-cir.patch
+ 
+ [4.18.255]
+ add v4.18_fwnode_args_args.patch
+ 
+ [4.17.255]
+ add v4.17_proc_create_single.patch

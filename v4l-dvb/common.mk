@@ -85,6 +85,16 @@ endef
 
 $(eval $(call KernelPackage,smsmdtv))
 
+define KernelPackage/mtk-cir
+  SUBMENU := $(DVB_MENU)
+  TITLE := MTK IR
+  V4L_KCONFIG := CONFIG_IR_MTK
+  FILES := $(PKG_BUILD_DIR)/v4l/mtk-cir.ko
+  AUTOLOAD := $(call AutoProbe,mtk-cir)
+  DEPENDS := +kmod-rc-core
+endef
+
+$(eval $(call KernelPackage,mtk-cir))
 
 define KernelPackage/ttpci-eeprom
   SUBMENU := $(DVB_MENU)

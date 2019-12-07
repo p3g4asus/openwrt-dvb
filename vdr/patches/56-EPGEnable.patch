@@ -1,0 +1,77 @@
+﻿--- a/config.c	2019-10-22 11:37:54.000000000 +0200
++++ b/config.c	2019-10-22 11:43:40.000000000 +0200
+@@ -411,12 +411,13 @@
+   SubtitleFgTransparency = 0;
+   SubtitleBgTransparency = 0;
+   EPGLanguages[0] = -1;
+   EPGScanTimeout = 5;
+   EPGBugfixLevel = 3;
+   EPGLinger = 0;
++  EPGEnable = 1;
+   SVDRPTimeout = 300;
+   ZapTimeout = 3;
+   ChannelEntryTimeout = 1000;
+   RcRepeatDelay = 300;
+   RcRepeatDelta = 100;
+   DefaultPriority = 50;
+@@ -636,12 +637,13 @@
+   else if (!strcasecmp(Name, "SubtitleFgTransparency")) SubtitleFgTransparency = atoi(Value);
+   else if (!strcasecmp(Name, "SubtitleBgTransparency")) SubtitleBgTransparency = atoi(Value);
+   else if (!strcasecmp(Name, "EPGLanguages"))        return ParseLanguages(Value, EPGLanguages);
+   else if (!strcasecmp(Name, "EPGScanTimeout"))      EPGScanTimeout     = atoi(Value);
+   else if (!strcasecmp(Name, "EPGBugfixLevel"))      EPGBugfixLevel     = atoi(Value);
+   else if (!strcasecmp(Name, "EPGLinger"))           EPGLinger          = atoi(Value);
++  else if (!strcasecmp(Name, "EPGEnable"))           EPGEnable          = atoi(Value);
+   else if (!strcasecmp(Name, "SVDRPTimeout"))        SVDRPTimeout       = atoi(Value);
+   else if (!strcasecmp(Name, "ZapTimeout"))          ZapTimeout         = atoi(Value);
+   else if (!strcasecmp(Name, "ChannelEntryTimeout")) ChannelEntryTimeout= atoi(Value);
+   else if (!strcasecmp(Name, "RcRepeatDelay"))       RcRepeatDelay      = atoi(Value);
+   else if (!strcasecmp(Name, "RcRepeatDelta"))       RcRepeatDelta      = atoi(Value);
+   else if (!strcasecmp(Name, "DefaultPriority"))     DefaultPriority    = atoi(Value);
+@@ -765,12 +767,13 @@
+   Store("SubtitleFgTransparency", SubtitleFgTransparency);
+   Store("SubtitleBgTransparency", SubtitleBgTransparency);
+   StoreLanguages("EPGLanguages", EPGLanguages);
+   Store("EPGScanTimeout",     EPGScanTimeout);
+   Store("EPGBugfixLevel",     EPGBugfixLevel);
+   Store("EPGLinger",          EPGLinger);
++  Store("EPGEnable",          EPGEnable);
+   Store("SVDRPTimeout",       SVDRPTimeout);
+   Store("ZapTimeout",         ZapTimeout);
+   Store("ChannelEntryTimeout",ChannelEntryTimeout);
+   Store("RcRepeatDelay",      RcRepeatDelay);
+   Store("RcRepeatDelta",      RcRepeatDelta);
+   Store("DefaultPriority",    DefaultPriority);
+--- a/config.h	2019-10-22 11:37:54.000000000 +0200
++++ b/config.h	2019-10-22 11:44:03.000000000 +0200
+@@ -287,12 +287,13 @@
+   int SubtitleOffset;
+   int SubtitleFgTransparency, SubtitleBgTransparency;
+   int EPGLanguages[I18N_MAX_LANGUAGES + 1];
+   int EPGScanTimeout;
+   int EPGBugfixLevel;
+   int EPGLinger;
++  int EPGEnable;
+   int SVDRPTimeout;
+   int ZapTimeout;
+   int ChannelEntryTimeout;
+   int RcRepeatDelay;
+   int RcRepeatDelta;
+   int DefaultPriority, DefaultLifetime;
+--- a/vdr.c	2019-10-22 11:37:54.000000000 +0200
++++ b/vdr.c	2019-10-22 11:45:04.000000000 +0200
+@@ -1381,13 +1381,13 @@
+                      DirectMainFunction(osRecordings); // no last viewed recording, so enter the Recordings menu
+                   break;
+              default:    break;
+              }
+            }
+         if (!Menu) {
+-           if (!InhibitEpgScan)
++           if (!InhibitEpgScan && Setup.EPGEnable)
+               EITScanner.Process();
+            bool Error = false;
+            if (RecordingsHandler.Finished(Error)) {
+               if (Error)
+                  Skins.Message(mtError, tr("Editing process failed!"));
+               else

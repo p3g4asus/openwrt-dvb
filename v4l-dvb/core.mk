@@ -31,6 +31,7 @@ define KernelPackage/rc-core
   DEPENDS := +kmod-media +kmod-input-core
 endef
 
+
 define KernelPackage/rc-core/description
  Enable support for Remote Controllers on Linux. This is
  needed in order to support several video capture adapters,
@@ -43,6 +44,36 @@ endef
 
 $(eval $(call KernelPackage,rc-core))
 
+define KernelPackage/rc-decoders
+  SUBMENU := $(DVB_MENU)
+  TITLE := Remote Controller support
+  V4L_KCONFIG := \
+      CONFIG_RC_DECODERS=y \
+      CONFIG_IR_JVC_DECODER=m \
+      CONFIG_IR_NEC_DECODER=m \
+      CONFIG_IR_RC6_DECODER=m \
+      CONFIG_IR_RC5_DECODER=m \
+      CONFIG_IR_SONY_DECODER=m \
+      CONFIG_IR_SANYO_DECODER=m \
+      CONFIG_IR_SHARP_DECODER=m \
+      CONFIG_IR_MCE_KBD_DECODER=m \
+      CONFIG_IR_XMP_DECODER=m \
+      CONFIG_IR_IMON_DECODER=m
+  FILES := $(PKG_BUILD_DIR)/v4l/ir-rc5-decoder.ko \
+      $(PKG_BUILD_DIR)/v4l/ir-nec-decoder.ko \
+      $(PKG_BUILD_DIR)/v4l/ir-mce_kbd-decoder.ko \
+      $(PKG_BUILD_DIR)/v4l/ir-jvc-decoder.ko \
+      $(PKG_BUILD_DIR)/v4l/ir-imon-decoder.ko \
+      $(PKG_BUILD_DIR)/v4l/ir-xmp-decoder.ko \
+      $(PKG_BUILD_DIR)/v4l/ir-sony-decoder.ko \
+      $(PKG_BUILD_DIR)/v4l/ir-sharp-decoder.ko \
+      $(PKG_BUILD_DIR)/v4l/ir-sanyo-decoder.ko \
+      $(PKG_BUILD_DIR)/v4l/ir-rc6-decoder.ko
+  AUTOLOAD := $(call AutoProbe,rc-decoders)
+  DEPENDS := +kmod-rc-core
+endef
+
+$(eval $(call KernelPackage,rc-decoders))
 
 define KernelPackage/v4l2-core
   SUBMENU := $(DVB_MENU)

@@ -1,0 +1,681 @@
+--- src/autoconf.c	2019-01-21 23:55:46.000000000 +0100
++++ src/autoconf.c	2019-11-24 00:07:47.000000000 +0100
+@@ -63,13 +63,13 @@
+ #include <fcntl.h>
+ #include <time.h>
+ #include <unistd.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #include <sys/stat.h>
+-#include <sys/poll.h>
++#include <poll.h>
+ 
+ 
+ #include "errors.h"
+ #include "ts.h"
+ #include "mumudvb.h"
+ #include "dvb.h"
+@@ -361,12 +361,22 @@
+ 	}
+ 	if(auto_p->autoconf_temp_cat)
+ 	{
+ 		free(auto_p->autoconf_temp_cat);
+ 		auto_p->autoconf_temp_cat=NULL;
+ 	}
++	if(auto_p->sat_delivery)
++	{
++		free(auto_p->sat_delivery);
++		auto_p->sat_delivery=NULL;
++	}
++	if(auto_p->terr_delivery)
++	{
++		free(auto_p->terr_delivery);
++		auto_p->terr_delivery=NULL;
++	}
+ }
+ 
+ 
+ 
+ 
+ 
+--- src/autoconf.h	2019-01-21 23:55:46.000000000 +0100
++++ src/autoconf.h	2019-11-23 23:36:59.000000000 +0100
+@@ -144,17 +144,20 @@
+ 	/** the template for the channel name*/
+ 	char name_template[MAX_NAME_LEN];
+ 
+ 	/** The CA systems */
+ 	mumudvb_ca_system_t ca_system_list[MAX_CA_SYSTEMS];
++	descr_terr_delivery_t * terr_delivery;
++	descr_sat_delivery_t * sat_delivery;
+ }auto_p_t;
+ 
+ 
+ void init_aconf_v(auto_p_t *aconf_p);
+ int autoconf_init(auto_p_t *auto_p);
+ void autoconf_freeing(auto_p_t *);
+ int read_autoconfiguration_configuration(auto_p_t *auto_p, char *substring);
+ int autoconf_new_packet(int pid, unsigned char *ts_packet, auto_p_t *auto_p, fds_t *fds, mumu_chan_p_t *chan_p, tune_p_t *tune_p, multi_p_t *multi_p,  unicast_parameters_t *unicast_vars, int server_id, void *scam_vars);
+ int autoconf_poll(long now, auto_p_t *auto_p, mumu_chan_p_t *chan_p, tune_p_t *tune_p, multi_p_t *multi_p, fds_t *fds, unicast_parameters_t *unicast_vars, int server_id, void *scam_vars);
+ void autoconf_pmt_follow( unsigned char *ts_packet, fds_t *fds, mumudvb_channel_t *actual_channel, char *card_base_path, int tuner, mumu_chan_p_t *chan_p );
+ 
+ #endif
+--- src/autoconf_nit.c	2019-01-21 23:55:46.000000000 +0100
++++ src/autoconf_nit.c	2019-11-24 00:47:29.000000000 +0100
+@@ -41,13 +41,13 @@
+ #include "mumudvb.h"
+ #include "autoconf.h"
+ #include "log.h"
+ 
+ static char *log_module="Autoconf: ";
+ 
+-void parse_nit_ts_descriptor(unsigned char *buf,int ts_descriptors_loop_len, mumudvb_channel_t *channels, int number_of_channels, int pat_tsid);
++void parse_nit_ts_descriptor(unsigned char *buf,int ts_descriptors_loop_len, mumudvb_channel_t *channels, int number_of_channels, int pat_tsid, auto_p_t *auto_p);
+ void parse_lcn_descriptor(unsigned char *buf, mumudvb_channel_t *channels, int number_of_channels);
+ 
+ 
+ 
+ void autoconf_nit_need_update(auto_p_t *auto_p, unsigned char *buf)
+ {
+@@ -141,13 +141,13 @@
+ 	//We read the descriptors
+ 	ts_display_nit_network_descriptors(log_module, buf,network_descriptors_length);
+ 	buf += network_descriptors_length;
+ 	nit_mid_t *middle=(nit_mid_t *)buf;
+ 	int ts_loop_length=HILO(middle->transport_stream_loop_length);
+ 	buf +=SIZE_NIT_MID;
+-	parse_nit_ts_descriptor(buf,ts_loop_length, chan_p->channels, chan_p->number_of_channels, auto_p->transport_stream_id);
++	parse_nit_ts_descriptor(buf,ts_loop_length, chan_p->channels, chan_p->number_of_channels, auto_p->transport_stream_id, auto_p);
+ 
+ 
+ 	int sections_missing=0;
+ 	//We check if we saw all sections
+ 	for(int i=0;i<=header->last_section_number;i++)
+ 		if(auto_p->nit_sections_seen[i]==0)
+@@ -167,13 +167,13 @@
+ 	}
+ 	return 0;
+ 
+ }
+ 
+ 
+-void parse_nit_ts_descriptor(unsigned char* buf, int ts_descriptors_loop_len, mumudvb_channel_t* channels, int number_of_channels, int pat_tsid)
++void parse_nit_ts_descriptor(unsigned char* buf, int ts_descriptors_loop_len, mumudvb_channel_t* channels, int number_of_channels, int pat_tsid, auto_p_t *auto_p)
+ {
+ 	int descriptors_loop_len;
+ 	nit_ts_t *descr_header;
+ 	int ts_id,orig_network_id;
+ 	while (ts_descriptors_loop_len > 0)
+ 	{
+@@ -205,16 +205,30 @@
+ 				{
+ 					ts_display_lcn_descriptor(log_module, buf);
+ 					parse_lcn_descriptor(buf, channels, number_of_channels);
+ 				}
+ 				else if(descriptor_tag==0x41)
+ 					ts_display_service_list_descriptor(log_module, buf);
+-				else if(descriptor_tag==0x43)
++				else if(descriptor_tag==0x43) {
+ 					ts_display_satellite_delivery_system_descriptor(log_module, buf);
++					if (!auto_p->sat_delivery)
++						auto_p->sat_delivery = (descr_sat_delivery_t *)malloc(sizeof(auto_p->sat_delivery));
++					if (auto_p->sat_delivery)
++						memcpy(auto_p->sat_delivery,buf,sizeof(descr_sat_delivery_t));
+-				else if(descriptor_tag==0x5A)
++				}
++				else if(descriptor_tag==0x5A) {
+ 					ts_display_terrestrial_delivery_system_descriptor(log_module, buf);
++					if (!auto_p->terr_delivery)
++						auto_p->terr_delivery = (descr_terr_delivery_t *)malloc(sizeof(auto_p->terr_delivery));
++					if (auto_p->terr_delivery)
++						memcpy(auto_p->terr_delivery,buf,sizeof(descr_terr_delivery_t));
++				}
+ 				else if(descriptor_tag==0x62)
+ 					ts_display_frequency_list_descriptor(log_module, buf);
+ 				else
+ 					log_message( log_module, MSG_FLOOD, " --- NIT TS descriptor --- descriptor_tag == 0x%02x len %d descriptors_loop_len %d ------------\n", descriptor_tag, descriptor_len, descriptors_loop_len);
+ 			}
+ 			buf += descriptor_len;
+--- src/autoconf_pmt.c	2019-01-21 23:55:46.000000000 +0100
++++ src/autoconf_pmt.c	2019-11-24 00:00:42.000000000 +0100
+@@ -54,13 +54,13 @@
+ 
+ 
+ /****************************************************************************/
+ //Parts of this code (read of the pmt and read of the pat)
+ // from libdvb, strongly modified, with commentaries added
+ /****************************************************************************/
+-void autoconf_get_pmt_pids(auto_p_t *auto_p, mumudvb_ts_packet_t *pmt, int *pids, int *num_pids, int *pids_type, char (*pids_language)[4], int *ca_sys_id)
++void autoconf_get_pmt_pids(auto_p_t *auto_p, mumudvb_ts_packet_t *pmt, int *pids, int *num_pids, int *pids_type, unsigned char *pids_raw_type, char (*pids_language)[4], int *ca_sys_id)
+ {
+ 	*num_pids=0;
+ 
+ 	char temp_pids_language[MAX_PIDS][4];
+ 	memset(temp_pids_language,0,MAX_PIDS*4*sizeof(char));
+ 	pmt_t *header;
+@@ -347,12 +347,13 @@
+ 		}
+ 		log_message( log_module,  MSG_DEBUG,"  PID Language Code = %s\n",language);
+ 
+ 
+ 		pids[*num_pids]=pid;
+ 		pids_type[*num_pids]=pid_type;
++		pids_raw_type[*num_pids]=descr_header->stream_type;
+ 		snprintf(temp_pids_language[*num_pids],4,"%s",language);
+ 		(*num_pids)++;
+ 		if (*num_pids >= MAX_PIDS)
+ 		{
+ 			log_message( log_module,  MSG_ERROR,
+ 					"Too many PIDs : %d\n",
+@@ -392,25 +393,26 @@
+ 	for (int i=0; i<32; i++)
+ 		channel->ca_sys_id[i]=0;
+ 
+ 
+ 	int temp_pids[MAX_PIDS];
+ 	int temp_pids_type[MAX_PIDS];
++	unsigned char temp_pids_raw_type[MAX_PIDS];
+ 	char temp_pids_language[MAX_PIDS][4];
+ 	//For channel update
+ 	int temp_num_pids=0;
+ 
+ 
+ 	temp_pids[0]=pmt->pid;
+ 	temp_num_pids++;
+ 
+ 
+ 
+ 
+ 	//We get the PIDs contained in the PMT
+-	autoconf_get_pmt_pids(auto_p, pmt, temp_pids, &temp_num_pids, temp_pids_type, temp_pids_language, channel->ca_sys_id);
++	autoconf_get_pmt_pids(auto_p, pmt, temp_pids, &temp_num_pids, temp_pids_type, temp_pids_raw_type, temp_pids_language, channel->ca_sys_id);
+ 
+ 
+ 
+ 	/**************************
+ 	 * PCR PID
+ 	 **************************/
+@@ -488,12 +490,13 @@
+ 
+ 		for(int i=0;i<temp_num_pids;i++)
+ 		{
+ 			//+1 because PMT is already set
+ 			channel->pid_i.pids[i+1]=temp_pids[i];
+ 			channel->pid_i.pids_type[i+1]=temp_pids_type[i];
++			channel->pid_i.pids_raw_type[i+1]=temp_pids_raw_type[i];
+ 			snprintf(channel->pid_i.pids_language[i+1],4,"%s",temp_pids_language[i]);
+ 		}
+ 		channel->pid_i.num_pids=temp_num_pids+1;
+ 
+ 
+ 		log_message( log_module,  MSG_DETAIL, "        pids : \n");/**@todo Generate a strind and call log_message after, in syslog it generates one line per pid : use the toolbox unicast*/
+--- src/cam.c	2019-01-21 23:55:46.000000000 +0100
++++ src/cam.c	2019-11-24 00:07:47.000000000 +0100
+@@ -34,13 +34,13 @@
+ #include <sys/types.h>
+ #include <sys/stat.h>
+ #include <fcntl.h>
+ #include <time.h>
+ #include <unistd.h>
+ #include <sys/stat.h>
+-#include <sys/poll.h>
++#include <poll.h>
+ 
+ /* DVB Card Drivers */
+ #include <linux/dvb/version.h>
+ #include <linux/dvb/dmx.h>
+ #include <linux/dvb/frontend.h>
+ 
+--- src/dvb.h	2019-01-21 23:55:46.000000000 +0100
++++ src/dvb.h	2019-11-24 00:07:47.000000000 +0100
+@@ -37,13 +37,13 @@
+ #include <stdio.h>
+ #include <sys/ioctl.h>
+ #include <sys/stat.h>
+ #include <unistd.h>
+ #include <fcntl.h>
+ #include <resolv.h>
+-#include <sys/poll.h>
++#include <poll.h>
+ 
+ // DVB includes:
+ #include <linux/dvb/dmx.h>
+ #include <linux/dvb/frontend.h>
+ 
+ #include "mumudvb.h"
+--- src/log.c	2019-01-21 23:55:46.000000000 +0100
++++ src/log.c	2019-11-25 00:04:21.000000000 +0100
+@@ -41,12 +41,13 @@
+ #include <sys/types.h>
+ #include <unistd.h>
+ #include <inttypes.h>
+ 
+ 
+ #include "mumudvb.h"
++#include "autoconf.h"
+ #include "errors.h"
+ #include "log.h"
+ #include "tune.h"
+ 
+ #ifdef HAVE_ICONV
+ #include <iconv.h>
+@@ -465,31 +466,50 @@
+ 	log_message( log_module, MSG_DETAIL,"%s\n",string.string);
+ 	mumu_free_string(&string);
+ 	/********  end of display the pids **********/
+ }
+ 
+ 
+-
++static long bcd32_to_cpu(const int b0, const int b1, const int b2, const int b3)
++{
++	return ((b0 >> 4) & 0x0f) * 10000000 + (b0 & 0x0f) * 1000000 +
++	    ((b1 >> 4) & 0x0f) * 100000 + (b1 & 0x0f) * 10000 +
++	    ((b2 >> 4) & 0x0f) * 1000 + (b2 & 0x0f) * 100 +
++	    ((b3 >> 4) & 0x0f) * 10 + (b3 & 0x0f);
++}
+ 
++#define _CCT(A) A+strlen(A), 100-strlen(A)
+ /**
+  * @brief Generate a file containing the list of the streamed channels
+  * and a file containing a list of not streamed channels
+  *
+  * @param file_streamed_channels_filename The filename for the file containig the list of streamed channels
+  * @param file_not_streamed_channels_filename The filename for the file containig the list of NOT streamed channels
+  * @param number_of_channels the number of channels
+  * @param channels the channels array
+  */
+ void
+ gen_file_streamed_channels (char *file_streamed_channels_filename, char *file_not_streamed_channels_filename,
+-		int number_of_channels, mumudvb_channel_t *channels)
++		int number_of_channels, mumudvb_channel_t *channels,struct monitor_parameters_t *mon_p)
+ {
+ 	/**todo : adapt it for unicast (json ?) */
+ 	FILE *file_streamed_channels;
+ 	FILE *file_not_streamed_channels;
+ 	int curr_channel;
++	mumudvb_channel_t * ch;
++	char common_pars[101];
++	char video_pid[101];
++	char audio_pids[101];
++	char dts_pids[101];
++	char ttx_pids[101];
++	char sub_pids[101];
++	int pt,ptr,pid;
++	unsigned int freq = (int)(mon_p->tune_p->freq+0.5);
++	struct auto_p_t * auto_p = mon_p->auto_p;
++	char lng;
++	common_pars[0] = 0;
+ 
+ 	file_streamed_channels = fopen (file_streamed_channels_filename, "w");
+ 	if (file_streamed_channels == NULL)
+ 	{
+ 		log_message( log_module, MSG_WARN,
+ 				"Error file_streamed_channels %s: %s\n",
+@@ -504,13 +524,13 @@
+ 				"Error file_not_streamed_channels %s: %s\n",
+ 				file_not_streamed_channels_filename, strerror (errno));
+ 		fclose (file_streamed_channels);  // the first fopen was successful!
+ 		return;
+ 	}
+ 
+-	for (curr_channel = 0; curr_channel < number_of_channels; curr_channel++)
++	for (curr_channel = 0; curr_channel < number_of_channels; curr_channel++) {
+ 		//We store the old to be sure that we store only channels over the minimum packets limit
+ 		if (channels[curr_channel].has_traffic && (channels[curr_channel].channel_ready>=READY))
+ 		{
+ 			fprintf (file_streamed_channels, "%s:%d:%s:%d", channels[curr_channel].ip4Out, channels[curr_channel].portOut, channels[curr_channel].name, channels[curr_channel].service_type);
+ 			if (channels[curr_channel].scrambled_channel == FULLY_UNSCRAMBLED)
+ 				fprintf (file_streamed_channels, ":FullyUnscrambled\n");
+@@ -518,15 +538,223 @@
+ 				fprintf (file_streamed_channels, ":PartiallyUnscrambled\n");
+ 			else //HIGHLY_SCRAMBLED
+ 				fprintf (file_streamed_channels, ":HighlyScrambled\n");
+ 		}
+ 		else
+ 			fprintf (file_not_streamed_channels, "%s:%d:%s:%d\n", channels[curr_channel].ip4Out, channels[curr_channel].portOut, channels[curr_channel].name, channels[curr_channel].service_type);
++	}
++	if (auto_p->sat_delivery) {
++		descr_sat_delivery_t * sd = auto_p->sat_delivery;
++		char pol = 'H';
++		unsigned short modt = 999;
++		unsigned char roff = 35;
++		unsigned short fec = 999;
++		if (sd->polarization==1)
++			pol = 'V';
++		else if (sd->polarization==2)
++			pol = 'L';
++		else if (sd->polarization==1)
++			pol = 'R';
++		if (sd->modulation_type==2)
++			modt = 5;
++		else if (sd->modulation_type==3)
++			modt = 16;
++		else if (sd->modulation_type==1)
++			modt = 2;
++		if (sd->roll_off==1)
++			roff = 25;
++		else if (sd->roll_off==2)
++			roff = 20;
++		if (sd->FEC_inner==0)
++			fec = 0;
++		else if (sd->FEC_inner==1)
++			fec = 12;
++		else if (sd->FEC_inner==2)
++			fec = 23;
++		else if (sd->FEC_inner==3)
++			fec = 34;
++		else if (sd->FEC_inner==4)
++			fec = 56;
++		else if (sd->FEC_inner==5)
++			fec = 78;
++		else if (sd->FEC_inner==6)
++			fec = 89;
++		else if (sd->FEC_inner==7)
++			fec = 35;
++		else if (sd->FEC_inner==8)
++			fec = 45;
++		else if (sd->FEC_inner==9)
++			fec = 910;
++		snprintf(common_pars, 100, "S%u%cO%uC%uM%u:S%d%01d,%01d%c:%ld",
++			sd->modulation_system, pol, roff, fec, modt,
++			sd->orbital_position_hi,
++			(sd->orbital_position_lo>>4)&0x0f,
++			sd->orbital_position_lo&0x0f,sd->west_east_flag?'E':'W',
++			10 * bcd32_to_cpu(sd->symbol_rate_12,
++				sd->symbol_rate_34, sd->symbol_rate_56, sd->symbol_rate_7)/1000);
++	}
++	else if (auto_p->terr_delivery) {
++		descr_terr_delivery_t * td = auto_p->terr_delivery;
++		unsigned char bwi = 8;
++		unsigned short constel = 999;
++		unsigned short hier = 999;
++		unsigned short hp = 999;
++		unsigned short lp = 999;
++		unsigned short gu = 999;
++		unsigned short tr = 999;
++		if (td->constellation==0)
++			constel = 2;
++		else if (td->constellation==1)
++			constel = 16;
++		else if (td->constellation==2)
++			constel = 64;
++		if (td->bandwidth<=3)
++			bwi = 8-td->bandwidth;
++		if (td->hierarchy_information==0)
++			hier = 0;
++		else if (td->hierarchy_information==1)
++			hier = 1;
++		else if (td->hierarchy_information==2)
++			hier = 2;
++		else if (td->hierarchy_information==3)
++			hier = 4;
++		else if (td->hierarchy_information==4)
++			hier = 0;
++		else if (td->hierarchy_information==5)
++			hier = 1;
++		else if (td->hierarchy_information==6)
++			hier = 2;
++		else if (td->hierarchy_information==7)
++			hier = 4;
++		if (td->code_rate_HP_stream==0)
++			hp = 12;
++		else if (td->code_rate_HP_stream==1)
++			hp = 23;
++		else if (td->code_rate_HP_stream==2)
++			hp = 34;
++		else if (td->code_rate_HP_stream==3)
++			hp = 56;
++		else if (td->code_rate_HP_stream==4)
++			hp = 78;
++		if (td->code_rate_LP_stream==0)
++			lp = 12;
++		else if (td->code_rate_LP_stream==1)
++			lp = 23;
++		else if (td->code_rate_LP_stream==2)
++			lp = 34;
++		else if (td->code_rate_LP_stream==3)
++			lp = 56;
++		else if (td->code_rate_LP_stream==4)
++			lp = 78;
++		if (td->guard_interval==0)
++			gu = 32;
++		else if (td->guard_interval==1)
++			gu = 16;
++		else if (td->guard_interval==2)
++			gu = 8;
++		else if (td->guard_interval==3)
++			gu = 4;
++		if (td->transmission_mode==0)
++			tr = 2;
++		else if (td->transmission_mode==1)
++			tr = 8;
++		else if (td->transmission_mode==2)
++			tr = 4;
++		snprintf(common_pars, 100, "B%uM%uY%uC%uD%uG%uT%u:T:27500", bwi,constel,hier,hp,lp,gu,tr);
++	}
+ 	fclose (file_streamed_channels);
+ 	fclose (file_not_streamed_channels);
++	if (*common_pars) {
++		char vdrfname[256];
++		snprintf(vdrfname, 256, "%s_chan.conf", file_streamed_channels_filename);
++		file_streamed_channels = fopen (vdrfname, "w");
++		if (!file_streamed_channels)
++			return;
++		for (curr_channel = 0; curr_channel < number_of_channels; curr_channel++) {
++			video_pid[0] = '0';
++			video_pid[1] = audio_pids[0] = ttx_pids[0] = sub_pids[0] = dts_pids[0] = 0;
++			ch = channels+curr_channel;
++			if (ch->logical_channel_number)
++				fprintf (file_streamed_channels,":@%d\n",ch->logical_channel_number);
++			fprintf (file_streamed_channels, "%s:%u:%s",
++				ch->name,
++				freq/1000,
++				common_pars);
+ 
++			for(int i=0; i<ch->pid_i.num_pids; i++) {
++				pt = ch->pid_i.pids_type[i];
++				ptr = ch->pid_i.pids_raw_type[i];
++				pid = ch->pid_i.pids[i];
++				lng = ch->pid_i.pids_language[i][0];
++				if (lng=='-')
++					lng = 0;
++				if (pt==PID_VIDEO_MPEG1 || pt==PID_VIDEO_MPEG2 || pt==PID_VIDEO_MPEG4_ASP ||
++					pt==PID_VIDEO_MPEG4_AVC || pt==PID_VIDEO_MPEG4_HEVC) {
++					snprintf(video_pid,100,"%d=%d",pid,ptr);
++					if (pid && (ch->pid_i.pcr_pid!=pid))
++						snprintf(_CCT(video_pid),"+%d",ch->pid_i.pcr_pid);
++				}
++				else if (pt==PID_AUDIO_MPEG1 || pt==PID_AUDIO_MPEG2) {
++					if (strlen(audio_pids))
++						snprintf(_CCT(audio_pids),",");
++					snprintf(_CCT(audio_pids),"%d",pid);
++					if (lng)
++						snprintf(_CCT(audio_pids),"=%s",ch->pid_i.pids_language[i]);
++					if (ptr)
++						snprintf(_CCT(audio_pids),"@%d",ptr);
++				}
++				else if (pt==PID_AUDIO_AAC_LATM || pt==PID_AUDIO_AAC_ADTS || pt==PID_AUDIO_ATSC ||
++					pt==PID_AUDIO_AC3 || pt==PID_AUDIO_EAC3 || pt==PID_AUDIO_DTS ||
++					pt==PID_AUDIO_AAC) {
++					if (strlen(dts_pids))
++						snprintf(_CCT(dts_pids),",");
++					snprintf(_CCT(dts_pids),"%d",pid);
++					if (lng)
++						snprintf(_CCT(dts_pids),"=%s",ch->pid_i.pids_language[i]);
++					if (ptr)
++						snprintf(_CCT(dts_pids),"@%d",ptr);
++				}
++				else if (pt==PID_EXTRA_TELETEXT) {
++					if (strlen(ttx_pids))
++						snprintf(_CCT(ttx_pids),",");
++					snprintf(_CCT(ttx_pids),"%d",pid);
++					if (lng)
++						snprintf(_CCT(ttx_pids),"=%s",ch->pid_i.pids_language[i]);
++				}
++				else if (pt==PID_EXTRA_SUBTITLE) {
++					if (strlen(sub_pids))
++						snprintf(_CCT(sub_pids),",");
++					snprintf(_CCT(sub_pids),"%d",pid);
++					if (lng)
++						snprintf(_CCT(sub_pids),"=%s",ch->pid_i.pids_language[i]);
++				}
++			}
++			if (!strlen(audio_pids))
++				strcpy(audio_pids, "0");
++			if (!strlen(ttx_pids))
++				strcpy(ttx_pids, "0");
++			fprintf(file_streamed_channels,":%s:%s",video_pid,audio_pids);
++			if (strlen(dts_pids))
++				fprintf(file_streamed_channels,";%s",dts_pids);
++			fprintf(file_streamed_channels,":%s",ttx_pids);
++			if (strlen(sub_pids))
++				fprintf(file_streamed_channels,";%s",sub_pids);
++			fprintf(file_streamed_channels,":0:%d:%d:%d:%d\n",ch->service_id,
++				(auto_p->transport_stream_id > 0) ? auto_p->original_network_id : 0,
++				auto_p->transport_stream_id,ch->pid_i.pmt_pid);
++		}
++		fclose (file_streamed_channels);
++	}
+ }
+ 
+ 
+ 
+ 
+ 
+--- src/log.h	2019-01-21 23:55:46.000000000 +0100
++++ src/log.h	2019-11-24 01:24:48.000000000 +0100
+@@ -105,13 +105,13 @@
+ 
+ 
+ void init_stats_v(stats_infos_t *stats_p);
+ void print_info ();
+ void usage (char *name);
+ void log_message( char* log_module, int , const char *, ... ) __attribute__ ((format (printf, 3, 4)));
+-void gen_file_streamed_channels (char *nom_fich_chaines_diff, char *nom_fich_chaines_non_diff, int nb_flux, mumudvb_channel_t *channels);
++void gen_file_streamed_channels (char *nom_fich_chaines_diff, char *nom_fich_chaines_non_diff, int nb_flux, mumudvb_channel_t *channels,struct monitor_parameters_t *mon_p);
+ void log_streamed_channels(char *log_module,int number_of_channels, mumudvb_channel_t *channels, int multicast_ipv4, int multicast_ipv6, int unicast, int unicast_master_port, char *unicastipOut);
+ char *ca_sys_id_to_str(int id);
+ void display_service_type(int type, int loglevel,char *log_module);
+ char *pid_type_to_str(int type);
+ char *service_type_to_str(int type);
+ char *simple_service_type_to_str(int type);
+--- src/mumudvb.c	2019-01-21 23:55:46.000000000 +0100
++++ src/mumudvb.c	2019-11-24 00:07:47.000000000 +0100
+@@ -88,13 +88,13 @@
+ 
+ // Linux includes:
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <ctype.h>
+ #include <sys/time.h>
+-#include <sys/poll.h>
++#include <poll.h>
+ #include <sys/epoll.h>
+ #include <sys/stat.h>
+ #include <stdint.h>
+ #include <resolv.h>
+ #include <fcntl.h>
+ #include <unistd.h>
+--- src/mumudvb.h	2019-01-21 23:55:46.000000000 +0100
++++ src/mumudvb.h	2019-11-23 17:25:40.000000000 +0100
+@@ -272,12 +272,13 @@
+ 	/* The flag for the PIDs*/
+ 	mumu_f_t pid_f;
+ 	/**the channel pids*/
+ 	int pids[MAX_PIDS];
+ 	/**the channel pids type (PMT, audio, video etc)*/
+ 	int pids_type[MAX_PIDS];
++	unsigned char pids_raw_type[MAX_PIDS];
+ 	/**the channel pids language (ISO639 - 3 characters)*/
+ 	char pids_language[MAX_PIDS][4];
+ 	/**count the number of scrambled packets for the PID*/
+ 	int pids_num_scrambled_packets[MAX_PIDS];
+ 	/**tell if the PID is scrambled (1) or not (0)*/
+ 	char pids_scrambled[MAX_PIDS];
+--- src/mumudvb_channels.c	2019-01-21 23:55:46.000000000 +0100
++++ src/mumudvb_channels.c	2019-11-24 00:07:47.000000000 +0100
+@@ -31,13 +31,13 @@
+ #include "log.h"
+ #include "errors.h"
+ #include "dvb.h"
+ #include "rtp.h"
+ #include "unicast_http.h"
+ 
+-#include <sys/poll.h>
++#include <poll.h>
+ #include <sys/time.h>
+ #include <errno.h>
+ #include <string.h>
+ #include <stdlib.h>
+ #include <stdarg.h>
+ #include "scam_common.h"
+--- src/mumudvb_common.c	2019-01-21 23:55:46.000000000 +0100
++++ src/mumudvb_common.c	2019-11-24 00:07:47.000000000 +0100
+@@ -30,13 +30,13 @@
+ #include "mumudvb.h"
+ #include "log.h"
+ #include "errors.h"
+ #include "rtp.h"
+ #include "unicast_http.h"
+ 
+-#include <sys/poll.h>
++#include <poll.h>
+ #include <sys/time.h>
+ #include <errno.h>
+ #include <string.h>
+ #include <stdlib.h>
+ #include <stdarg.h>
+ #include "scam_common.h"
+--- src/mumudvb_mon.c	2019-01-21 23:55:46.000000000 +0100
++++ src/mumudvb_mon.c	2019-11-24 01:21:57.000000000 +0100
+@@ -786,13 +786,13 @@
+ 
+ 		/*******************************************/
+ 		/* generation of the file which says       */
+ 		/* the streamed channels                   */
+ 		/*******************************************/
+ 		if (write_streamed_channels)
+-			gen_file_streamed_channels(params->filename_channels_streamed, params->filename_channels_not_streamed, params->chan_p->number_of_channels, params->chan_p->channels);
++			gen_file_streamed_channels(params->filename_channels_streamed, params->filename_channels_not_streamed, params->chan_p->number_of_channels, params->chan_p->channels, params);
+ 
+ 
+ 
+ 		pthread_mutex_unlock(&params->chan_p->lock);
+ 
+ 		for(i=0;i<params->wait_time && !params->threadshutdown;i++)
+--- src/ts.c	2019-01-21 23:55:46.000000000 +0100
++++ src/ts.c	2019-11-24 00:03:47.000000000 +0100
+@@ -856,14 +856,15 @@
+ 	log_message( log_module, MSG_FLOOD, "Orbital position: %d%01d,%01d°", descr->orbital_position_hi,(descr->orbital_position_lo>>4)&0x0f, descr->orbital_position_lo&0x0f);
+ 	if(descr->west_east_flag)
+ 		log_message( log_module, MSG_FLOOD, "Estern position");
+ 	else
+ 		log_message( log_module, MSG_FLOOD, "Western position");
++	log_message( log_module, MSG_FLOOD, "Polarization: (0x%02x)", descr->polarization);
+ 	switch(descr->polarization)
+ 	{
+-	log_message( log_module, MSG_FLOOD, "Polarization: (0x%02x)", descr->polarization);
+ 	case 0:
+ 		log_message( log_module, MSG_FLOOD, "Polarization: linear - horizontal");
+ 		break;
+ 	case 1:
+ 		log_message( log_module, MSG_FLOOD, "Polarization: linear - vertical");
+ 		break;
+--- src/tune.c	2019-01-21 23:55:46.000000000 +0100
++++ src/tune.c	2019-11-24 00:07:47.000000000 +0100
+@@ -32,13 +32,13 @@
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <stdint.h>
+ #include <ctype.h>
+ #include <sys/ioctl.h>
+-#include <sys/poll.h>
++#include <poll.h>
+ #include <unistd.h>
+ #include "config.h"
+ #include <errno.h>
+ #include <string.h>
+ 
+ #include <linux/dvb/dmx.h>
