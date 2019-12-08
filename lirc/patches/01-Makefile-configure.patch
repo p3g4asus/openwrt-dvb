@@ -69,7 +69,40 @@
  py_pkg_testdir          = $(pkgdatadir)/python-pkg/tests
  dist_py_pkg_test_DATA   = python-pkg/tests/test_client.py \
                            python-pkg/tests/dummy-server \
-@@ -123,13 +123,13 @@
+@@ -101,35 +101,35 @@
+ dist_py_pkg_doc_DATA    = python-pkg/doc/Doxyfile \
+                           python-pkg/doc/mainpage.dox \
+                           python-pkg/doc/diode-2.gif
+ 
+ libpython               = $(libdir)/python$(PYTHON_VERSION)
+ pydir                   = $(libpython)/site-packages/lirc
+-py_LTLIBRARIES          = python-pkg/lib/_client.la
+-python_pkg_lib__client_la_SOURCES = \
+-                          python-pkg/lirc/_client.c
+-python_pkg_lib__client_la_CPPFLAGS = \
+-                          $(PYTHON_CFLAGS) $(AM_CPPFLAGS) \
+-			  -I$(abs_builddir)/lib -I$(abs_srcdir)/lib
++#py_LTLIBRARIES          = python-pkg/lib/_client.la
++#python_pkg_lib__client_la_SOURCES = \
++#                          python-pkg/lirc/_client.c
++#python_pkg_lib__client_la_CPPFLAGS = \
++#                          $(PYTHON_CFLAGS) $(AM_CPPFLAGS) \
++#			  -I$(abs_builddir)/lib -I$(abs_srcdir)/lib
+ 
+-python_pkg_lib__client_la_LDFLAGS  = \
+-                          -module -avoid-version -export-symbols-regex client \
+-                          $(PYTHON_LIBS)
+-python_pkg_lib__client_la_LIBADD = \
+-                          lib/liblirc_client.la
++#python_pkg_lib__client_la_LDFLAGS  = \
++#                          -module -avoid-version -export-symbols-regex client \
++#                          $(PYTHON_LIBS)
++#python_pkg_lib__client_la_LIBADD = \
++#                          lib/liblirc_client.la
+ 
+ pylint: .phony
+ 	$(MAKE) -C tools pylint
+ 	-PYTHONPATH=$(PYTHONPATH) $(PYLINT) --rcfile=pylint.conf \
  	--msg-template='$(pylint_template)' $(py_PYTHON)
  
  pep8: $(py_PYTHON)
